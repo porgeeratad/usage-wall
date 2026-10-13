@@ -1,0 +1,29 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Server compiles on the system Python
+        run: /usr/bin/python3 -m py_compile server/server.py art/embed.py bin/usage-wall-statusline
+      - name: Page script parses
+        run: |
+          /usr/bin/python3 - <<'PY'
+          import re
+          html = open("web/index.html", encoding="utf-8").read()
+          open("page.js", "w").write("\n".join(re.findall(r"<script>([\s\S]*?)</script>", html)))
+          PY
+          node --check page.js
+      - name: Shell scripts
+        run: |
+          brew install shellcheck >/dev/null
+          shellcheck -S warning install.sh uninstall.sh bin/usage-wall app/build.sh
+      - name: Build the app (universal)
+        run: ./app/build.sh
+      - name: App answers on the command line
+        run: '"build/Usage Wall.app/Contents/MacOS/UsageWall" --help'

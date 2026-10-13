@@ -1,0 +1,34 @@
+name: Bug report
+description: Something does not work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you saw. A screenshot helps.
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: macOS 15.4, MacBook Air M2
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Usage Wall version
+      description: "`usage-wall version`"
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Where the wall shows
+      options: [Dedicated display (full screen), Floating window, Automatic, Not showing at all]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: "The end of `~/Library/Logs/UsageWall.log`. It never contains your token, but check before pasting."
+      render: text

@@ -1,0 +1,5 @@
+.*.tmp
+__pycache__/
+build/
+.DS_Store
+art/_archive/

@@ -1,0 +1,56 @@
+#!/usr/bin/python3
+"""Claude Code status line for Usage Wall (stdlib Python, no jq).
+
+Claude Code runs this after every response with a JSON object on stdin; when that object carries rate_limits
+(Pro/Max sign-in), a snapshot goes to ~/Library/Application Support/UsageWall/state/statusline.json for the wall.
+Prints: model | ctx N% | Nk tok | $N.NN | 5h N% · 7d N%. Never touches credentials.
+
+Already have a status line? Feed this one the same JSON and ignore its output:
+    printf '%s' "$input" | ~/.local/bin/usage-wall-statusline >/dev/null
+"""
+import json
+import os
+import sys
+import time
+
+raw = sys.stdin.read()
+try:
+    d = json.loads(raw) if raw.strip() else {}
+except ValueError:
+    d = {}
+
+limits = d.get("rate_limits")
+if isinstance(limits, dict):
+    state = os.environ.get("USAGE_WALL_STATE") or os.path.expanduser("~/Library/Application Support/UsageWall/state")
+    try:
+        os.makedirs(state, exist_ok=True)
+        snap = {"ts": time.time(), "model": (d.get("model") or {}).get("display_name"),
+                "five_hour": limits.get("five_hour"), "seven_day": limits.get("seven_day")}
+        tmp = os.path.join(state, f".statusline.{os.getpid()}.tmp")
+        with open(tmp, "w") as f:
+            json.dump(snap, f)
+        os.replace(tmp, os.path.join(state, "statusline.json"))
+    except OSError:
+        pass                                    # never break the status line over the wall
+
+
+def num(v):
+    return v if isinstance(v, (int, float)) else None
+
+
+parts = []
+model = (d.get("model") or {}).get("display_name")
+ctx = num((d.get("context_window") or {}).get("used_percentage"))
+tok = num((d.get("context_window") or {}).get("total_input_tokens"))
+cost = num((d.get("cost") or {}).get("total_cost_usd"))
+fh = num(((limits or {}).get("five_hour") or {}).get("used_percentage")) if isinstance(limits, dict) else None
+sd = num(((limits or {}).get("seven_day") or {}).get("used_percentage")) if isinstance(limits, dict) else None
+if ctx is not None:
+    parts.append(f"ctx {ctx:.0f}%")
+if tok:
+    parts.append(f"{tok / 1000:.1f}k tok" if tok >= 1000 else f"{tok:.0f} tok")
+if cost:
+    parts.append(f"${cost:.2f}")
+if fh is not None or sd is not None:
+    parts.append(f"5h {'?' if fh is None else f'{fh:.0f}'}% · 7d {'?' if sd is None else f'{sd:.0f}'}%")
+sys.stdout.write("\033[2m" + " | ".join([model or "Claude"] + parts) + "\033[0m")

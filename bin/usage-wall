@@ -1,0 +1,66 @@
+#!/bin/bash
+# usage-wall — control Usage Wall from the terminal.
+#   usage-wall display [list]          displays, their size and how each would be used
+#   usage-wall display set NAME        NAME | auto | window  (the running app moves at once)
+#   usage-wall status                  usage as the wall sees it
+#   usage-wall reload | open | logs | config | version
+#   usage-wall start | stop            start the app / quit it (stays off until start or next login)
+#   usage-wall login on|off            start at login, or not
+#   usage-wall signin on|off           also read usage with your Claude sign-in (unofficial endpoint)
+set -euo pipefail
+LABEL="io.github.porgeeratad.usagewall"
+APP="${USAGE_WALL_APP:-$HOME/Applications/Usage Wall.app}"
+EXE="$APP/Contents/MacOS/UsageWall"
+[ -x "$EXE" ] || { echo "Usage Wall is not installed at $APP (run ./install.sh)" >&2; exit 1; }
+port() { "$EXE" --config 2>/dev/null | /usr/bin/python3 -c 'import json,sys; print(json.loads(sys.stdin.read().split("\nfile:")[0]).get("port", 8765))' 2>/dev/null || echo 8765; }
+
+case "${1:-help}" in
+  display)
+    case "${2:-list}" in
+      list) "$EXE" --list-displays ;;
+      set) [ $# -ge 3 ] || { echo "usage: usage-wall display set NAME|auto|window" >&2; exit 2; }; "$EXE" --set-display "$3" ;;
+      auto|window) "$EXE" --set-display "$2" ;;
+      *) echo "usage: usage-wall display [list | set NAME|auto|window]" >&2; exit 2 ;;
+    esac ;;
+  status)
+    json="$(curl -fsS "http://127.0.0.1:$(port)/api/state")" || { echo "the app is not running (usage-wall start)" >&2; exit 1; }
+    printf '%s' "$json" | /usr/bin/python3 -c "$(cat <<'PY'
+import json, sys, time
+s = json.load(sys.stdin)
+def line(key, label):
+    v = s.get(key) or {}
+    if v.get("percent") is None:
+        return label + ": --"
+    r = v.get("resets_at")
+    return "%s: %.0f%% used%s" % (label, v["percent"], time.strftime(" (resets %a %H:%M)", time.localtime(r)) if r else "")
+print(line("seven_day", "weekly"))
+print(line("five_hour", "5-hour"))
+for x in s.get("scoped") or []:
+    print("%s weekly: %s%% used" % (x.get("name"), x.get("percent")))
+if s.get("oauth_error"):
+    print("problem:", s["oauth_error"])
+if s.get("stale"):
+    print("note: the data is old")
+PY
+)" ;;
+  reload) "$EXE" --reload ;;
+  open) open "http://127.0.0.1:$(port)/" ;;
+  logs) tail -n 50 -f "$HOME/Library/Logs/UsageWall.log" ;;
+  config) "$EXE" --config ;;
+  version) /usr/bin/defaults read "$APP/Contents/Info" CFBundleShortVersionString ;;
+  start) open "$APP" ;;
+  stop) osascript -e "tell application id \"$LABEL\" to quit" ;;
+  login)
+    case "${2:-}" in
+      on) "$EXE" --install-agent ;;
+      off) "$EXE" --uninstall-agent ;;
+      *) echo "usage: usage-wall login on|off" >&2; exit 2 ;;
+    esac ;;
+  signin)
+    case "${2:-}" in
+      on|off) "$EXE" --signin "$2" ;;
+      *) echo "usage: usage-wall signin on|off" >&2; exit 2 ;;
+    esac ;;
+  help|-h|--help) sed -n '2,9p' "$0" ;;
+  *) echo "unknown command: $1 (usage-wall help)" >&2; exit 2 ;;
+esac
